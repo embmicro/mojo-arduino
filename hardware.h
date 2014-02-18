@@ -32,42 +32,42 @@
 
 #define CCLK_PORT PORTD
 #define CCLK_DDR DDRD
-#define CCLK_BIT PD0
+#define CCLK_BIT 0
 #define CCLK_PIN PIND
 
 #define CS_FLASH_PORT PORTD
 #define CS_FLASH_DDR DDRD
-#define CS_FLASH_BIT PD1
+#define CS_FLASH_BIT 1
 #define CS_FLASH_PIN PIND
 
 #define INIT_PORT PORTD
 #define INIT_DDR DDRD
-#define INIT_BIT PD5
+#define INIT_BIT 5
 #define INIT_PIN PIND
 
 #define TX_BUSY_PORT PORTD
 #define TX_BUSY_DDR DDRD
-#define TX_BUSY_BIT PD5
+#define TX_BUSY_BIT 5
 #define TX_BUSY_PIN PIND
 
 #define DONE_PORT PORTC
 #define DONE_DDR DDRC
-#define DONE_BIT PC6
+#define DONE_BIT 6
 #define DONE_PIN PINC
 
 #define PROGRAM_PORT PORTC
 #define PROGRAM_DDR DDRC
-#define PROGRAM_BIT PC7
+#define PROGRAM_BIT 7
 #define PROGRAM_PIN PINC
 
 #define MISO_PORT PORTB
 #define MISO_DDR DDRB
-#define MISO_BIT PB3
+#define MISO_BIT 3
 #define MISO_PIN PINB
 
 #define SS_PORT PORTB
 #define SS_DDR DDRB
-#define SS_BIT PB0
+#define SS_BIT 0
 #define SS_PIN PINB
 
 #define SET(p, v) p ## _PORT = (p ## _PORT & ~(1 << p ## _BIT)) | (v << p ## _BIT)
