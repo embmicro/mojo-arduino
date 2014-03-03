@@ -410,11 +410,11 @@ void uartTask() {
 
 ISR(USART1_RX_vect) { // new serial data!
   RingBuffer_Insert(&serialBuffer, UDR1 ); // save it
-  if (serialBuffer.Count > 100) // are we almost out of space?
+  if (serialBuffer.Count > 110) // are we almost out of space?
     SET(TX_BUSY, HIGH); // signal we can't take any more
   else
     SET(TX_BUSY, LOW);
-  if (serialBuffer.Count > 120) 
+  if (serialBuffer.Count > 125) 
     serialRXDisable(); // if our flag is ignored disable the serial port so it doesn't clog things up
 }
 
