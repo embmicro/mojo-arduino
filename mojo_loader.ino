@@ -370,19 +370,21 @@ static inline void Serial_SendByte(const char DataByte)
    from one port to the other instead of the ADC to the FPGA. */
 void uartTask() {
   if (Serial) { // does the data have somewhere to go?
+  
     uint16_t ct = RingBuffer_GetCount(&serialBuffer);
     if (ct > 0) { // is there data to send?
       if (serialBuffer.Out + ct <= serialBuffer.End) { // does it loop in our buffer?
-        serialBuffer.Out += Serial.write(serialBuffer.Out, ct); // dump all the date
+        Serial.write(serialBuffer.Out, ct); // dump all the date
+        serialBuffer.Out += ct;
         if (serialBuffer.Out == serialBuffer.End)
           serialBuffer.Out = serialBuffer.Start; // loop the buffer
       } 
       else { // it looped the ring buffer
-        uint8_t* end = serialBuffer.Out + ct;
-        uint16_t ct2 = end - serialBuffer.End;
+        uint8_t* loopend = serialBuffer.Out + ct;
+        uint16_t ct2 = loopend - serialBuffer.End;
         uint16_t ct1 = ct - ct2;
         Serial.write(serialBuffer.Out, ct1); // dump first block
-        Serial.write(serialBuffer.Out, ct2); // dump second block
+        Serial.write(serialBuffer.Start, ct2); // dump second block
         serialBuffer.Out = serialBuffer.Start + ct2; // update the pointers
       }
 
@@ -398,21 +400,21 @@ void uartTask() {
       SET(TX_BUSY, LOW); // re-enable the serial port
       serialRXEnable();
     }
-  }
 
-  int16_t w;
-  while ((w = Serial.read()) >= 0) {
-    Serial_SendByte(w);
+    int16_t w;
+    while ((w = Serial.read()) >= 0) {
+      Serial_SendByte(w);
+    }
   }
 }
 
 ISR(USART1_RX_vect) { // new serial data!
   RingBuffer_Insert(&serialBuffer, UDR1 ); // save it
-  if (serialBuffer.Count > 110) // are we almost out of space?
+  if (serialBuffer.Count > 100) // are we almost out of space?
     SET(TX_BUSY, HIGH); // signal we can't take any more
   else
     SET(TX_BUSY, LOW);
-  if (serialBuffer.Count > 125) 
+  if (serialBuffer.Count > 120) 
     serialRXDisable(); // if our flag is ignored disable the serial port so it doesn't clog things up
 }
 
