@@ -370,11 +370,10 @@ static inline void Serial_SendByte(const char DataByte)
    from one port to the other instead of the ADC to the FPGA. */
 void uartTask() {
   if (Serial) { // does the data have somewhere to go?
-  
     uint16_t ct = RingBuffer_GetCount(&serialBuffer);
     if (ct > 0) { // is there data to send?
       if (serialBuffer.Out + ct <= serialBuffer.End) { // does it loop in our buffer?
-        Serial.write(serialBuffer.Out, ct); // dump all the date
+        ct = Serial.write(serialBuffer.Out, ct); // dump all the date
         serialBuffer.Out += ct;
         if (serialBuffer.Out == serialBuffer.End)
           serialBuffer.Out = serialBuffer.Start; // loop the buffer
@@ -383,20 +382,27 @@ void uartTask() {
         uint8_t* loopend = serialBuffer.Out + ct;
         uint16_t ct2 = loopend - serialBuffer.End;
         uint16_t ct1 = ct - ct2;
-        Serial.write(serialBuffer.Out, ct1); // dump first block
-        Serial.write(serialBuffer.Start, ct2); // dump second block
-        serialBuffer.Out = serialBuffer.Start + ct2; // update the pointers
+        uint16_t ct1s = Serial.write(serialBuffer.Out, ct1); // dump first block
+        if (ct1s == ct1) {
+          ct2 = Serial.write(serialBuffer.Start, ct2); // dump second block
+          serialBuffer.Out = serialBuffer.Start + ct2; // update the pointers
+          ct = ct1+ct2;
+        } 
+        else {
+          ct = ct1s;
+          serialBuffer.Out += ct;
+        }
       }
 
       uint_reg_t CurrentGlobalInt = GetGlobalInterruptMask();
       GlobalInterruptDisable();
 
       serialBuffer.Count -= ct; // update the count
-
+      
       SetGlobalInterruptMask(CurrentGlobalInt);
     }
 
-    if (RingBuffer_GetCount(&serialBuffer) < 10) { // is the buffer near empty?
+    if (RingBuffer_GetCount(&serialBuffer) < 250) {
       SET(TX_BUSY, LOW); // re-enable the serial port
       serialRXEnable();
     }
@@ -409,13 +415,20 @@ void uartTask() {
 }
 
 ISR(USART1_RX_vect) { // new serial data!
-  RingBuffer_Insert(&serialBuffer, UDR1 ); // save it
-  if (serialBuffer.Count > 110) // are we almost out of space?
+  *(serialBuffer.In) = UDR1;
+
+  if (++serialBuffer.In == serialBuffer.End)
+    serialBuffer.In = serialBuffer.Start;
+
+  serialBuffer.Count++;
+
+  sei();
+
+  if (serialBuffer.Count >= 250) { // are we almost out of space?
     SET(TX_BUSY, HIGH); // signal we can't take any more
-  else
-    SET(TX_BUSY, LOW);
-  if (serialBuffer.Count > 125) 
-    serialRXDisable(); // if our flag is ignored disable the serial port so it doesn't clog things up
+    if (serialBuffer.Count > 254) 
+      serialRXDisable(); // if our flag is ignored disable the serial port so it doesn't clog things up
+  }
 }
 
 
