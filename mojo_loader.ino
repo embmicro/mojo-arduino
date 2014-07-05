@@ -18,7 +18,7 @@ typedef enum {
 } 
 taskState_t;
 
-uint8_t loadBuffer[384];
+uint8_t loadBuffer[512+128];
 RingBuffer_t adcBuffer, serialBuffer;
 volatile taskState_t taskState = SERVICE;
 
@@ -52,7 +52,7 @@ void initPostLoad() {
 
   // These buffers are used by the demo ADC/Serial->USB code to prevent dropped samples
   RingBuffer_InitBuffer(&adcBuffer, loadBuffer, 128);
-  RingBuffer_InitBuffer(&serialBuffer, loadBuffer+128, 256);
+  RingBuffer_InitBuffer(&serialBuffer, loadBuffer+128, 512);
 
   adcPort = 0x0f; // disable the ADC by default
   ADC_BUS_DDR &= ~ADC_BUS_MASK; // make inputs
@@ -402,7 +402,7 @@ void uartTask() {
       SetGlobalInterruptMask(CurrentGlobalInt);
     }
 
-    if (RingBuffer_GetCount(&serialBuffer) < 250) {
+    if (RingBuffer_GetCount(&serialBuffer) < 500) {
       SET(TX_BUSY, LOW); // re-enable the serial port
       serialRXEnable();
     }
@@ -422,9 +422,9 @@ ISR(USART1_RX_vect) { // new serial data!
 
   serialBuffer.Count++;
 
-  if (serialBuffer.Count >= 250) { // are we almost out of space?
+  if (serialBuffer.Count >= 500) { // are we almost out of space?
     SET(TX_BUSY, HIGH); // signal we can't take any more
-    if (serialBuffer.Count > 254) 
+    if (serialBuffer.Count > 510) 
       serialRXDisable(); // if our flag is ignored disable the serial port so it doesn't clog things up
   }
 }
