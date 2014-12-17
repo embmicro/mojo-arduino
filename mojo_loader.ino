@@ -101,6 +101,7 @@ void initPostLoad() {
 
   // the FPGA looks for CCLK to be high to know the AVR is ready for data
   SET(CCLK, HIGH);
+  IN(CCLK); // set as pull up so JTAG can work
 }
 
 /* We needed more flexibility than the Arduino libraries provide. This sets 

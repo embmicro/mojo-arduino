@@ -21,6 +21,7 @@ void initLoad() {
   SET(INIT, HIGH);
   SET(CCLK, LOW);
   SET(PROGRAM, LOW);
+  OUT(CCLK);
   enableDataBus();
 } 
 
