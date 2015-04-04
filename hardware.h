@@ -85,6 +85,7 @@
 #define SS_BIT 0
 #define SS_PIN PINB
 
+#define TOGGLE(p) p ## _PORT = (p ## _PORT ^ (1 << p ## _BIT))
 #define SET(p, v) p ## _PORT = (p ## _PORT & ~(1 << p ## _BIT)) | (v << p ## _BIT)
 #define VALUE(p) (p ## _PIN & (1 << p ## _BIT))
 #define OUT(p) p ## _DDR |= (1 << p ## _BIT)

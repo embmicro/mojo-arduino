@@ -419,7 +419,7 @@ void uartTask() {
     }
 
     if (RingBuffer_GetCount(&serialBuffer) < 1000) {
-      SET(TX_BUSY, LOW); // re-enable the serial port
+      TOGGLE(TX_BUSY); // re-enable the serial port
       serialRXEnable();
     }
 
@@ -437,13 +437,15 @@ ISR(USART1_RX_vect) { // new serial data!
     serialBuffer.In = serialBuffer.Start;
 
   serialBuffer.Count++;
-
+  
   if (serialBuffer.Count >= 1000) { // are we almost out of space?
-    SET(TX_BUSY, HIGH); // signal we can't take any more
     if (serialBuffer.Count > 1020) 
       serialRXDisable(); // if our flag is ignored disable the serial port so it doesn't clog things up
+  } else {
+    TOGGLE(TX_BUSY);
   }
 }
+
 
 
 
