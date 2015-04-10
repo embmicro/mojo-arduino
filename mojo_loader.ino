@@ -33,7 +33,18 @@ typedef enum {
 } 
 taskState_t;
 
-uint8_t loadBuffer[1024+128];
+#if defined(__AVR_ATmega32U4__)   // Mojo V3
+#define BUFFER_SIZE 1024
+#define SERIAL_STOP 1000
+#define SERIAL_CUT 1020
+#elif defined(__AVR_ATmega16U4__) // Mojo V2
+#define BUFFER_SIZE 512
+#define SERIAL_STOP 500
+#define SERIAL_CUT 510
+#endif
+
+uint8_t loadBuffer[BUFFER_SIZE+128];
+
 RingBuffer_t adcBuffer, serialBuffer;
 volatile taskState_t taskState = SERVICE;
 
@@ -67,7 +78,9 @@ void initPostLoad() {
 
   // These buffers are used by the demo ADC/Serial->USB code to prevent dropped samples
   RingBuffer_InitBuffer(&adcBuffer, loadBuffer, 128);
-  RingBuffer_InitBuffer(&serialBuffer, loadBuffer+128, 1024);
+  RingBuffer_InitBuffer(&serialBuffer, loadBuffer+128, BUFFER_SIZE);
+
+  
 
   adcPort = 0x0f; // disable the ADC by default
   ADC_BUS_DDR &= ~ADC_BUS_MASK; // make inputs
@@ -418,7 +431,7 @@ void uartTask() {
       SetGlobalInterruptMask(CurrentGlobalInt);
     }
 
-    if (RingBuffer_GetCount(&serialBuffer) < 1000) {
+    if (RingBuffer_GetCount(&serialBuffer) < SERIAL_STOP) {
       TOGGLE(TX_BUSY); // re-enable the serial port
       serialRXEnable();
     }
@@ -438,8 +451,8 @@ ISR(USART1_RX_vect) { // new serial data!
 
   serialBuffer.Count++;
   
-  if (serialBuffer.Count >= 1000) { // are we almost out of space?
-    if (serialBuffer.Count > 1020) 
+  if (serialBuffer.Count >= SERIAL_STOP) { // are we almost out of space?
+    if (serialBuffer.Count > SERIAL_CUT) 
       serialRXDisable(); // if our flag is ignored disable the serial port so it doesn't clog things up
   } else {
     TOGGLE(TX_BUSY);
