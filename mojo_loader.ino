@@ -25,12 +25,12 @@ typedef enum {
   WRITE_TO_FPGA,
   VERIFY_FLASH,
   LOAD_FROM_FLASH
-} 
+}
 loaderState_t;
 
 typedef enum {
   WAIT, START_LOAD, LOAD, SERVICE
-} 
+}
 taskState_t;
 
 #if defined(__AVR_ATmega32U4__)   // Mojo V3
@@ -43,7 +43,7 @@ taskState_t;
 #define SERIAL_CUT 510
 #endif
 
-uint8_t loadBuffer[BUFFER_SIZE+128];
+uint8_t loadBuffer[BUFFER_SIZE + 128];
 
 RingBuffer_t adcBuffer, serialBuffer;
 volatile taskState_t taskState = SERVICE;
@@ -51,9 +51,9 @@ volatile taskState_t taskState = SERVICE;
 uint8_t adcPort = 0x0F;
 volatile uint8_t convPort = 0x0F;
 
-/* This is where you should add your own code! Feel free to edit anything here. 
+/* This is where you should add your own code! Feel free to edit anything here.
    This function will work just like the Arduino loop() function in that it will
-   be called over and over. You should try to not delay too long in the loop to 
+   be called over and over. You should try to not delay too long in the loop to
    allow the Mojo to enter loading mode when requested. */
 void userLoop() {
   uartTask();
@@ -78,9 +78,9 @@ void initPostLoad() {
 
   // These buffers are used by the demo ADC/Serial->USB code to prevent dropped samples
   RingBuffer_InitBuffer(&adcBuffer, loadBuffer, 128);
-  RingBuffer_InitBuffer(&serialBuffer, loadBuffer+128, BUFFER_SIZE);
+  RingBuffer_InitBuffer(&serialBuffer, loadBuffer + 128, BUFFER_SIZE);
 
-  
+
 
   adcPort = 0x0f; // disable the ADC by default
   ADC_BUS_DDR &= ~ADC_BUS_MASK; // make inputs
@@ -108,7 +108,7 @@ void initPostLoad() {
   // This pin is used to signal the serial buffer is almost full
   OUT(TX_BUSY);
   SET(TX_BUSY, LOW);
-  
+
   // set progam as an input so that it's possible to use a JTAG programmer with the Mojo
   IN(PROGRAM);
 
@@ -117,7 +117,7 @@ void initPostLoad() {
   IN(CCLK); // set as pull up so JTAG can work
 }
 
-/* We needed more flexibility than the Arduino libraries provide. This sets 
+/* We needed more flexibility than the Arduino libraries provide. This sets
    the ADC up to free-run and call an interrupt when each new sample is ready */
 void configADC(uint8_t preScaler, uint8_t highPower, uint8_t refSelect, uint8_t port) {
   ADCSRA = (0 << ADEN); //disable
@@ -130,7 +130,7 @@ void configADC(uint8_t preScaler, uint8_t highPower, uint8_t refSelect, uint8_t 
 
   convPort = port;
   ADCSRA = (1 << ADEN) | (1 << ADSC) | (1 << ADATE) | (1 << ADIE)
-    | (preScaler << ADPS0);
+           | (preScaler << ADPS0);
 }
 
 void setup() {
@@ -166,157 +166,157 @@ void loop() {
   uint8_t buffIdx;
 
   switch (taskState) {
-  case WAIT:
-    break;
-  case START_LOAD: // command to enter loader mode
-    disablePostLoad(); // setup peripherals
-    taskState = LOAD; // enter loader mode
-    state = IDLE; // in idle state
-    break;
-  case LOAD:
-    w = Serial.read();
-    bt = (uint8_t) w;
-    if (w >= 0) { // if we have data
-      switch (state) {
-      case IDLE: // in IDLE we are waiting for a command from the PC
-        byteCount = 0;
-        transferSize = 0;
-        if (bt == 'F') { // write to flash
-          destination = 0; // flash
-          verify = 0; // don't verify
-          state = READ_SIZE;
-          Serial.write('R'); // signal we are ready
-        }
-        if (bt == 'V') { // write to flash and verify
-          destination = 0; // flash
-          verify = 1; // verify
-          state = READ_SIZE;
-          Serial.write('R'); // signal we are ready
-        }
-        if (bt == 'R') { // write to RAM
-          destination = 1; // ram
-          state = READ_SIZE;
-          Serial.write('R'); // signal we are ready
-        }
-        if (bt == 'E') { //erase
-          eraseFlash();
-          Serial.write('D'); // signal we are done
-        }
-        break;
-      case READ_SIZE: // we need to read in how many bytes the config data is
-        transferSize |= ((uint32_t) bt << (byteCount++ * 8));
-        if (byteCount > 3) {
-          byteCount = 0;
-          if (destination) {
-            state = WRITE_TO_FPGA;
-            initLoad(); // get the FPGA read for a load
-            startLoad(); // start the load
-          } 
-          else {
-            state = WRITE_TO_FLASH;
-            eraseFlash();
-          }
-          Serial.write('O'); // signal the size was read
-        }
-        break;
-      case WRITE_TO_FLASH:
-        // we can only use the batch write for even addresses
-        // so address 5 is written as a single byte
-        if (byteCount == 0)
-          writeByteFlash(5, bt);
-
-        buffIdx = (byteCount++ - 1) % 256;
-        loadBuffer[buffIdx] = bt;
-
-        if (buffIdx == 255 && byteCount != 0)
-          writeFlash(byteCount + 5 - 256, loadBuffer, 256); // write blocks of 256 bytes at a time for speed
-
-        if (byteCount == transferSize) { // the last block to write
-
-          if (buffIdx != 255) // finish the partial block write
-            writeFlash(byteCount + 5 - (buffIdx + 1), loadBuffer,
-            buffIdx + 1);
-
-          delayMicroseconds(50); // these are necciary to get reliable writes
-          uint32_t size = byteCount + 5;
-          for (uint8_t k = 0; k < 4; k++) {
-            writeByteFlash(k + 1, (size >> (k * 8)) & 0xFF); // write the size of the config data to the flash
-            delayMicroseconds(50);
-          }
-          delayMicroseconds(50);
-          writeByteFlash(0, 0xAA); // 0xAA is used to signal the flash has valid data
-          Serial.write('D'); // signal we are done
-          Serial.flush(); // make sure it sends
-          if (verify) {
-            state = VERIFY_FLASH;
-          } 
-          else {
-            state = LOAD_FROM_FLASH;
-          }
-        }
-        break;
-      case WRITE_TO_FPGA:
-        sendByte(bt); // just send the byte!
-        if (++byteCount == transferSize) { // if we are done
-          sendExtraClocks(); // send some extra clocks to make sure the FPGA is happy
-          state = IDLE;
-          taskState = SERVICE; // enter user mode
-          initPostLoad();
-          Serial.write('D'); // signal we are done
-        }
-        break;
-      case VERIFY_FLASH:
-        if (bt == 'S') {
-          byteCount += 5;
-          for (uint32_t k = 0; k < byteCount; k += 256) { // dump all the flash data
-            uint16_t s;
-            if (k + 256 <= byteCount) {
-              s = 256;
-            } 
-            else {
-              s = byteCount - k;
+    case WAIT:
+      break;
+    case START_LOAD: // command to enter loader mode
+      disablePostLoad(); // setup peripherals
+      taskState = LOAD; // enter loader mode
+      state = IDLE; // in idle state
+      break;
+    case LOAD:
+      w = Serial.read();
+      bt = (uint8_t) w;
+      if (w >= 0) { // if we have data
+        switch (state) {
+          case IDLE: // in IDLE we are waiting for a command from the PC
+            byteCount = 0;
+            transferSize = 0;
+            if (bt == 'F') { // write to flash
+              destination = 0; // flash
+              verify = 0; // don't verify
+              state = READ_SIZE;
+              Serial.write('R'); // signal we are ready
             }
-            readFlash(loadBuffer, k, s); // read blocks of 256
-            uint16_t br = Serial.write((uint8_t*) loadBuffer, s); // dump them to the serial port
-            k -= (256 - br); // if all the bytes weren't sent, resend them next round
-            delay(10); // needed to prevent errors in some computers running Windows (give it time to process the data?)
-          }
-          state = LOAD_FROM_FLASH;
-        }
-        break;
-      case LOAD_FROM_FLASH:
-        if (bt == 'L') {
-          loadFromFlash(); // load 'er up!
-          Serial.write('D'); // loading done
-          state = IDLE;
-          taskState = SERVICE;
-          initPostLoad();
-        }
-        break;
-      }
-    }
+            if (bt == 'V') { // write to flash and verify
+              destination = 0; // flash
+              verify = 1; // verify
+              state = READ_SIZE;
+              Serial.write('R'); // signal we are ready
+            }
+            if (bt == 'R') { // write to RAM
+              destination = 1; // ram
+              state = READ_SIZE;
+              Serial.write('R'); // signal we are ready
+            }
+            if (bt == 'E') { //erase
+              eraseFlash();
+              Serial.write('D'); // signal we are done
+            }
+            break;
+          case READ_SIZE: // we need to read in how many bytes the config data is
+            transferSize |= ((uint32_t) bt << (byteCount++ * 8));
+            if (byteCount > 3) {
+              byteCount = 0;
+              if (destination) {
+                state = WRITE_TO_FPGA;
+                initLoad(); // get the FPGA read for a load
+                startLoad(); // start the load
+              }
+              else {
+                state = WRITE_TO_FLASH;
+                eraseFlash();
+              }
+              Serial.write('O'); // signal the size was read
+            }
+            break;
+          case WRITE_TO_FLASH:
+            // we can only use the batch write for even addresses
+            // so address 5 is written as a single byte
+            if (byteCount == 0)
+              writeByteFlash(5, bt);
 
-    break;
-  case SERVICE:
-    userLoop(); // loop the user code
-    break;
-  } 
+            buffIdx = (byteCount++ - 1) % 256;
+            loadBuffer[buffIdx] = bt;
+
+            if (buffIdx == 255 && byteCount != 0)
+              writeFlash(byteCount + 5 - 256, loadBuffer, 256); // write blocks of 256 bytes at a time for speed
+
+            if (byteCount == transferSize) { // the last block to write
+
+              if (buffIdx != 255) // finish the partial block write
+                writeFlash(byteCount + 5 - (buffIdx + 1), loadBuffer,
+                           buffIdx + 1);
+
+              delayMicroseconds(50); // these are necciary to get reliable writes
+              uint32_t size = byteCount + 5;
+              for (uint8_t k = 0; k < 4; k++) {
+                writeByteFlash(k + 1, (size >> (k * 8)) & 0xFF); // write the size of the config data to the flash
+                delayMicroseconds(50);
+              }
+              delayMicroseconds(50);
+              writeByteFlash(0, 0xAA); // 0xAA is used to signal the flash has valid data
+              Serial.write('D'); // signal we are done
+              Serial.flush(); // make sure it sends
+              if (verify) {
+                state = VERIFY_FLASH;
+              }
+              else {
+                state = LOAD_FROM_FLASH;
+              }
+            }
+            break;
+          case WRITE_TO_FPGA:
+            sendByte(bt); // just send the byte!
+            if (++byteCount == transferSize) { // if we are done
+              sendExtraClocks(); // send some extra clocks to make sure the FPGA is happy
+              state = IDLE;
+              taskState = SERVICE; // enter user mode
+              initPostLoad();
+              Serial.write('D'); // signal we are done
+            }
+            break;
+          case VERIFY_FLASH:
+            if (bt == 'S') {
+              byteCount += 5;
+              for (uint32_t k = 0; k < byteCount; k += 256) { // dump all the flash data
+                uint16_t s;
+                if (k + 256 <= byteCount) {
+                  s = 256;
+                }
+                else {
+                  s = byteCount - k;
+                }
+                readFlash(loadBuffer, k, s); // read blocks of 256
+                uint16_t br = Serial.write((uint8_t*) loadBuffer, s); // dump them to the serial port
+                k -= (256 - br); // if all the bytes weren't sent, resend them next round
+                delay(10); // needed to prevent errors in some computers running Windows (give it time to process the data?)
+              }
+              state = LOAD_FROM_FLASH;
+            }
+            break;
+          case LOAD_FROM_FLASH:
+            if (bt == 'L') {
+              loadFromFlash(); // load 'er up!
+              Serial.write('D'); // loading done
+              state = IDLE;
+              taskState = SERVICE;
+              initPostLoad();
+            }
+            break;
+        }
+      }
+
+      break;
+    case SERVICE:
+      userLoop(); // loop the user code
+      break;
+  }
 }
 
-/* This is called when any control lines on the serial port are changed. 
- It requires a modification to the Arduino core code to work.         
- 
- This looks for 5 pulses on the DTR line within 250ms. Checking for 5 
+/* This is called when any control lines on the serial port are changed.
+ It requires a modification to the Arduino core code to work.
+
+ This looks for 5 pulses on the DTR line within 250ms. Checking for 5
  makes sure that false triggers won't happen when the serial port is opened. */
 void lineStateEvent(unsigned char linestate)
 {
-  static unsigned long start = 0; 
+  static unsigned long start = 0;
   static uint8_t falling = 0;
   if (!(linestate & LINESTATE_DTR)) {
     if ((millis() - start) < 250) {
       if (++falling >= 5)
         taskState = START_LOAD;
-    } 
+    }
     else {
       start = millis();
       falling = 1;
@@ -326,11 +326,11 @@ void lineStateEvent(unsigned char linestate)
 
 /* This checks to see what port the FPGA is requesting. If it hasn't changed then
    no worries, but if it has the ADC needs to be stopped and set to the new port.
-   
+
    It then empties the ADC buffer into the SPI bus so the FPGA can actually have the
    ADC data. */
 void adcTask() {
-  static uint8_t preScaler = 0x05; // 128
+  static uint8_t preScaler = 0x05; // 32
   static uint8_t highPower = 1;
   static uint8_t refSelect = 0x01; // AVcc
 
@@ -340,7 +340,7 @@ void adcTask() {
     adcPort = adc_bus;
     if (adcPort < 2 || (adcPort < 10 && adcPort > 3)) { // 0,1,4,5,6,7,8,9
       configADC(preScaler, highPower, refSelect, adcPort); // reconfigure ADC
-    } 
+    }
     else { // pin is not valid
       ADCSRA = (0 << ADEN); //disable ADC
     }
@@ -406,7 +406,7 @@ void uartTask() {
         serialBuffer.Out += ct;
         if (serialBuffer.Out == serialBuffer.End)
           serialBuffer.Out = serialBuffer.Start; // loop the buffer
-      } 
+      }
       else { // it looped the ring buffer
         uint8_t* loopend = serialBuffer.Out + ct;
         uint16_t ct2 = loopend - serialBuffer.End;
@@ -415,8 +415,8 @@ void uartTask() {
         if (ct1s == ct1) {
           ct2 = Serial.write(serialBuffer.Start, ct2); // dump second block
           serialBuffer.Out = serialBuffer.Start + ct2; // update the pointers
-          ct = ct1+ct2;
-        } 
+          ct = ct1 + ct2;
+        }
         else {
           ct = ct1s;
           serialBuffer.Out += ct;
@@ -427,13 +427,13 @@ void uartTask() {
       GlobalInterruptDisable();
 
       serialBuffer.Count -= ct; // update the count
-      
-      SetGlobalInterruptMask(CurrentGlobalInt);
-    }
 
-    if (RingBuffer_GetCount(&serialBuffer) < SERIAL_STOP) {
-      TOGGLE(TX_BUSY); // re-enable the serial port
-      serialRXEnable();
+      SetGlobalInterruptMask(CurrentGlobalInt);
+
+      if (RingBuffer_GetCount(&serialBuffer) < SERIAL_STOP) {
+        serialRXEnable();
+        TOGGLE(TX_BUSY); // re-enable the serial port
+      }
     }
 
     int16_t w;
@@ -450,9 +450,9 @@ ISR(USART1_RX_vect) { // new serial data!
     serialBuffer.In = serialBuffer.Start;
 
   serialBuffer.Count++;
-  
+
   if (serialBuffer.Count >= SERIAL_STOP) { // are we almost out of space?
-    if (serialBuffer.Count > SERIAL_CUT) 
+    if (serialBuffer.Count > SERIAL_CUT)
       serialRXDisable(); // if our flag is ignored disable the serial port so it doesn't clog things up
   } else {
     TOGGLE(TX_BUSY);
