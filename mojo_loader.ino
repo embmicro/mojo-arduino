@@ -74,7 +74,7 @@ void disablePostLoad() {
 
 /* Here you can do some setup before entering the userLoop loop */
 void initPostLoad() {
-  Serial.flush();
+  //Serial.flush();
 
   // These buffers are used by the demo ADC/Serial->USB code to prevent dropped samples
   RingBuffer_InitBuffer(&adcBuffer, loadBuffer, 128);
@@ -202,7 +202,7 @@ void loop() {
               eraseFlash();
               Serial.write('D'); // signal we are done
             }
-            Serial.flush();
+            //Serial.flush();
             break;
           case READ_SIZE: // we need to read in how many bytes the config data is
             transferSize |= ((uint32_t) bt << (byteCount++ * 8));
@@ -218,7 +218,7 @@ void loop() {
                 eraseFlash();
               }
               Serial.write('O'); // signal the size was read
-              Serial.flush();
+              //Serial.flush();
             }
             break;
           case WRITE_TO_FLASH:
@@ -248,7 +248,7 @@ void loop() {
               delayMicroseconds(50);
               writeByteFlash(0, 0xAA); // 0xAA is used to signal the flash has valid data
               Serial.write('D'); // signal we are done
-              Serial.flush(); // make sure it sends
+              //Serial.flush(); // make sure it sends
               if (verify) {
                 state = VERIFY_FLASH;
               }
@@ -265,7 +265,7 @@ void loop() {
               taskState = SERVICE; // enter user mode
               initPostLoad();
               Serial.write('D'); // signal we are done
-              Serial.flush();
+              //Serial.flush();
             }
             break;
           case VERIFY_FLASH:
@@ -282,7 +282,7 @@ void loop() {
                 readFlash(loadBuffer, k, s); // read blocks of 256
                 uint16_t br = Serial.write((uint8_t*) loadBuffer, s); // dump them to the serial port
                 k -= (256 - br); // if all the bytes weren't sent, resend them next round
-                Serial.flush();
+                //Serial.flush();
                 delay(10); // needed to prevent errors in some computers running Windows (give it time to process the data?)
               }
               state = LOAD_FROM_FLASH;
@@ -292,7 +292,7 @@ void loop() {
             if (bt == 'L') {
               loadFromFlash(); // load 'er up!
               Serial.write('D'); // loading done
-              Serial.flush();
+              //Serial.flush();
               state = IDLE;
               taskState = SERVICE;
               initPostLoad();
@@ -437,8 +437,8 @@ void uartTask() {
 
       int count = RingBuffer_GetCount(&serialBuffer);
 
-      if (count == 0)
-        Serial.flush();
+      //if (count == 0)
+      //  Serial.flush();
 
       if (count < SERIAL_STOP) {
         serialRXEnable();
