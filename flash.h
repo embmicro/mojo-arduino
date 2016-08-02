@@ -19,7 +19,12 @@
 #include "ring_buffer.h"
 #include "hardware.h"
 
+#define MICROCHIP_ID 0xBF
+#define ADESTO_ID 0x1F
+
 void SPI_Setup(void);
+
+void getDevID();
 
 /*
  * eraseFlash()

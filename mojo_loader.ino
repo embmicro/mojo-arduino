@@ -150,6 +150,7 @@ void setup() {
 
   sei(); // enable interrupts
 
+  getDevID();
   loadFromFlash(); // load on power up
   initPostLoad();
 }
@@ -164,6 +165,7 @@ void loop() {
   int16_t w;
   uint8_t bt;
   uint8_t buffIdx;
+  uint32_t addr;
 
   switch (taskState) {
     case WAIT:
@@ -208,12 +210,14 @@ void loop() {
             transferSize |= ((uint32_t) bt << (byteCount++ * 8));
             if (byteCount > 3) {
               byteCount = 0;
+              
               if (destination) {
                 state = WRITE_TO_FPGA;
                 initLoad(); // get the FPGA read for a load
                 startLoad(); // start the load
               }
               else {
+                buffIdx = 0;
                 state = WRITE_TO_FLASH;
                 eraseFlash();
               }
@@ -222,23 +226,19 @@ void loop() {
             }
             break;
           case WRITE_TO_FLASH:
-            // we can only use the batch write for even addresses
-            // so address 5 is written as a single byte
-            if (byteCount == 0)
-              writeByteFlash(5, bt);
-
-            buffIdx = (byteCount++ - 1) % 256;
+            if (byteCount < 256 - 5)
+              buffIdx = byteCount % 256;
+            else
+              buffIdx = (byteCount+5) % 256;
             loadBuffer[buffIdx] = bt;
+            addr = byteCount + 5;
+            byteCount++;
 
-            if (buffIdx == 255 && byteCount != 0)
-              writeFlash(byteCount + 5 - 256, loadBuffer, 256); // write blocks of 256 bytes at a time for speed
+            if (addr % 256 == 255 || byteCount == transferSize){
+              writeFlash(addr - buffIdx, loadBuffer, buffIdx+1); // write blocks of 256 bytes at a time for speed
+            }
 
             if (byteCount == transferSize) { // the last block to write
-
-              if (buffIdx != 255) // finish the partial block write
-                writeFlash(byteCount + 5 - (buffIdx + 1), loadBuffer,
-                           buffIdx + 1);
-
               delayMicroseconds(50); // these are necciary to get reliable writes
               uint32_t size = byteCount + 5;
               for (uint8_t k = 0; k < 4; k++) {

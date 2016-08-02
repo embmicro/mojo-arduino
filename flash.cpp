@@ -15,12 +15,25 @@
 
 #include "flash.h"
 
+uint8_t deviceID;
+
 void waitBusy() {
   SET(CS_FLASH, LOW);
   SPI.transfer(0x05); //read status register
   while (SPI.transfer(0) & 0x01)
     ;
   SET(CS_FLASH, HIGH);
+}
+
+void getDevID() {
+  SPI_Setup();
+
+  SET(CS_FLASH, LOW);
+  SPI.transfer(0x9f); //read ID register
+  deviceID = SPI.transfer(0);
+  SET(CS_FLASH, HIGH);
+
+  SPI.end();
 }
 
 void SPI_Setup() {
@@ -36,6 +49,8 @@ void SPI_Setup() {
 
 void eraseFlash() {
   SPI_Setup();
+
+  waitBusy(); // wait for other writes
 
   SET(CS_FLASH, LOW);
   SPI.transfer(0x06); // Write mode
@@ -79,6 +94,7 @@ void writeByteFlash(uint32_t address, uint8_t b) {
   SPI.end();
 }
 
+// only works with microchip flash
 void waitHardwareBusy() {
   SET(CS_FLASH, LOW);
   delayMicroseconds(1); // change to 1
@@ -87,12 +103,50 @@ void waitHardwareBusy() {
   SET(CS_FLASH, HIGH);
 }
 
-void writeFlash(uint32_t startAddress, uint8_t *data, uint16_t length) {
+void writeFlashAdesto(uint32_t startAddress, uint8_t *data, uint16_t length) {
+  SPI_Setup();
+
+  uint32_t curAddress = startAddress;
+  uint16_t pos = 0;
+
+  while (pos < length) {
+    waitBusy();
+    SET(CS_FLASH, LOW);
+    SPI.transfer(0x06); // Write Enable
+    SET(CS_FLASH, HIGH);
+    SET(CS_FLASH, LOW);
+    SPI.transfer(0x02); // byte/page program
+    SPI.transfer(curAddress >> 16);
+    SPI.transfer(curAddress >> 8);
+    SPI.transfer(curAddress);
+    do {
+      SPI.transfer(data[pos++]);
+      curAddress++;
+      if (pos == length)
+        break;
+    } while (curAddress % 256 != 0);
+    SET(CS_FLASH, HIGH);
+  }
+
+  SPI.end();
+
+}
+
+void writeFlashMicrochip(uint32_t startAddress, uint8_t *data, uint16_t length) {
+  if (startAddress % 2 && length > 0){
+    writeByteFlash(startAddress, data[0]);
+    startAddress++;
+    data++;
+    length--;
+  }
+  
   if (length < 2) {
     if (length == 1)
       writeByteFlash(startAddress, data[0]);
     return;
   }
+
+  
 
   uint16_t pos;
 
@@ -137,13 +191,24 @@ void writeFlash(uint32_t startAddress, uint8_t *data, uint16_t length) {
   SPI.transfer(0x80); // Disable hardware EOW detection
   SET(CS_FLASH, HIGH);
 
+  SPI.end();
+
   if (pos < length)
     writeByteFlash(startAddress + pos, data[pos]);
+}
 
+void writeFlash(uint32_t startAddress, uint8_t *data, uint16_t length) {
+  if (deviceID == MICROCHIP_ID) {
+    writeFlashMicrochip(startAddress, data, length);
+  } else {
+    writeFlashAdesto(startAddress, data, length);
+  }
 }
 
 void readFlash(volatile uint8_t* buffer, uint32_t address, uint16_t count) {
   SPI_Setup();
+
+  waitBusy();
 
   SET(CS_FLASH, LOW);
   SPI.transfer(0x03);
