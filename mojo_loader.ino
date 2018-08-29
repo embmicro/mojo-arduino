@@ -16,6 +16,7 @@
 #include "hardware.h"
 #include "ring_buffer.h"
 #include <SPI.h>
+#include <EEPROM.h>
 #include "flash.h"
 
 typedef enum {
@@ -24,7 +25,9 @@ typedef enum {
   WRITE_TO_FLASH,
   WRITE_TO_FPGA,
   VERIFY_FLASH,
-  LOAD_FROM_FLASH
+  LOAD_FROM_FLASH,
+  WRITE_TO_EEPROM,
+  VERIFY_EEPROM
 }
 loaderState_t;
 
@@ -45,24 +48,23 @@ taskState_t;
 
 uint8_t loadBuffer[BUFFER_SIZE + 128];
 
-RingBuffer_t adcBuffer, serialBuffer;
+RingBuffer_t  serialBuffer;
 volatile taskState_t taskState = SERVICE;
 
-uint8_t adcPort = 0x0F;
 volatile uint8_t convPort = 0x0F;
 
 /* This is where you should add your own code! Feel free to edit anything here.
    This function will work just like the Arduino loop() function in that it will
    be called over and over. You should try to not delay too long in the loop to
    allow the Mojo to enter loading mode when requested. */
+volatile uint8_t sendLUT = 0;
+
 void userLoop() {
   uartTask();
-  adcTask();
 }
 
 /* this is used to undo any setup you did in initPostLoad */
 void disablePostLoad() {
-  ADCSRA = 0; // disable ADC
   UCSR1B = 0; // disable serial port
   SPI.end();  // disable SPI
   SET(CCLK, LOW);
@@ -76,15 +78,8 @@ void disablePostLoad() {
 void initPostLoad() {
   //Serial.flush();
 
-  // These buffers are used by the demo ADC/Serial->USB code to prevent dropped samples
-  RingBuffer_InitBuffer(&adcBuffer, loadBuffer, 128);
+  // These buffers are used by the Serial->USB code to prevent dropped samples
   RingBuffer_InitBuffer(&serialBuffer, loadBuffer + 128, BUFFER_SIZE);
-
-
-
-  adcPort = 0x0f; // disable the ADC by default
-  ADC_BUS_DDR &= ~ADC_BUS_MASK; // make inputs
-  ADC_BUS_PORT &= ~ADC_BUS_MASK; // no pull ups
 
   // Again, the Arduino libraries didn't offer the functionality we wanted
   // so we access the serial port directly. This sets up an interrupt
@@ -115,23 +110,10 @@ void initPostLoad() {
   // the FPGA looks for CCLK to be high to know the AVR is ready for data
   SET(CCLK, HIGH);
   IN(CCLK); // set as pull up so JTAG can work
+
+  loadLUTFromEEPROM();
 }
 
-/* We needed more flexibility than the Arduino libraries provide. This sets
-   the ADC up to free-run and call an interrupt when each new sample is ready */
-void configADC(uint8_t preScaler, uint8_t highPower, uint8_t refSelect, uint8_t port) {
-  ADCSRA = (0 << ADEN); //disable
-  ADMUX = (refSelect << REFS0) | (port & 0x07);
-
-  if (port > 7)
-    ADCSRB = (1 << MUX5) | (highPower << ADHSM);
-  else
-    ADCSRB = (highPower << ADHSM);
-
-  convPort = port;
-  ADCSRA = (1 << ADEN) | (1 << ADSC) | (1 << ADATE) | (1 << ADIE)
-           | (preScaler << ADPS0);
-}
 
 void setup() {
   /* Disable clock division */
@@ -179,10 +161,23 @@ void loop() {
       w = Serial.read();
       bt = (uint8_t) w;
       if (w >= 0) { // if we have data
-        switch (state) {
+        
+        switch (state) {         
           case IDLE: // in IDLE we are waiting for a command from the PC
             byteCount = 0;
             transferSize = 0;
+            if (bt =='T') { // load Look Up Table and verify
+              state = WRITE_TO_EEPROM;
+              verify = 1; // verify
+              transferSize = 1024;
+              Serial.write('R');
+            }
+            if (bt == 'U' ) { // load Look Up Table and dont verify
+              state = WRITE_TO_EEPROM;
+              verify = 0; // verify
+              transferSize = 1024;
+              Serial.write('R');
+            }
             if (bt == 'F') { // write to flash
               destination = 0; // flash
               verify = 0; // don't verify
@@ -204,6 +199,7 @@ void loop() {
               eraseFlash();
               Serial.write('D'); // signal we are done
             }
+            
             //Serial.flush();
             break;
           case READ_SIZE: // we need to read in how many bytes the config data is
@@ -268,6 +264,35 @@ void loop() {
               //Serial.flush();
             }
             break;
+
+            
+          case WRITE_TO_EEPROM:
+            // store byte to eeprom
+            EEPROM.write(byteCount, bt);
+            
+            if( ++byteCount == transferSize) { // if we are done
+              Serial.write('D'); // eeprom write done              
+
+              if( verify ){
+                state = VERIFY_EEPROM;
+              } else {
+                state = LOAD_FROM_FLASH;
+              }
+            }
+            break;
+          case VERIFY_EEPROM:
+            if( bt=='P' ){
+              do {
+                Serial.write(EEPROM.read(1024-byteCount));
+                delayMicroseconds(100);
+              } while( --byteCount );
+  
+              state=LOAD_FROM_FLASH;
+            }
+            break;
+
+
+            
           case VERIFY_FLASH:
             if (bt == 'S') {
               byteCount += 5;
@@ -329,61 +354,25 @@ void lineStateEvent(unsigned char linestate)
   }
 }
 
-/* This checks to see what port the FPGA is requesting. If it hasn't changed then
-   no worries, but if it has the ADC needs to be stopped and set to the new port.
+/* This checks to see if the user on the computer side has requested that the LUT be streamed 
+ *  from the AVR to the FPGA over SPI. 
+ */
+void loadLUTFromEEPROM() {
 
-   It then empties the ADC buffer into the SPI bus so the FPGA can actually have the
-   ADC data. */
-void adcTask() {
-  static uint8_t preScaler = 0x05; // 32
-  static uint8_t highPower = 1;
-  static uint8_t refSelect = 0x01; // AVcc
-
-  uint8_t adc_bus = (ADC_BUS_PIN & ADC_BUS_MASK) >> ADC_BUS_OFFSET;
-
-  if (adc_bus != adcPort) { // did the requested ADC pin change?
-    adcPort = adc_bus;
-    if (adcPort < 2 || (adcPort < 10 && adcPort > 3)) { // 0,1,4,5,6,7,8,9
-      configADC(preScaler, highPower, refSelect, adcPort); // reconfigure ADC
-    }
-    else { // pin is not valid
-      ADCSRA = (0 << ADEN); //disable ADC
-    }
-  }
-
-  while (!RingBuffer_IsEmpty(&adcBuffer)) { // for all the samples
-    // Grab two bytes from the ring buffer, do it directly for a speed gain
-    uint8_t byte1 = *adcBuffer.Out;
-    if (++adcBuffer.Out == adcBuffer.End)
-      adcBuffer.Out = adcBuffer.Start;
-    uint8_t byte2 = *adcBuffer.Out;
-    if (++adcBuffer.Out == adcBuffer.End)
-      adcBuffer.Out = adcBuffer.Start;
-
-    uint_reg_t CurrentGlobalInt = GetGlobalInterruptMask();
-    GlobalInterruptDisable();
-
-    adcBuffer.Count -= 2; // actually remove the two bytes from the buffer
-
-    SetGlobalInterruptMask(CurrentGlobalInt);
-
+  for( int addr=0; addr<1024; addr++ ){
     SET(SS, LOW);
-    uint8_t keyWord = SPI.transfer(byte1); // each sample is two bytes
-    uint8_t config = SPI.transfer(byte2);
+    byte a = EEPROM.read(addr);
+    SPI.transfer(a);
     SET(SS, HIGH);
-    if (keyWord == 0xAA) { // the keyWord is used by the FPGA to config the ADC
-      preScaler = config & 0x07;
-      highPower = (config >> 3) & 0x01;
-      refSelect = (config >> 4) & 0x03;
-      configADC(preScaler, highPower, refSelect, adcPort);
-    }
+    delayMicroseconds(1000);
   }
+
 }
 
-ISR(ADC_vect) { // new ADC sample, save it
-  RingBuffer_Insert(&adcBuffer, ADCL );
-  RingBuffer_Insert(&adcBuffer, (convPort << 4) | ADCH );
-}
+//ISR(ADC_vect) { // new ADC sample, save it
+//  RingBuffer_Insert(&adcBuffer, ADCL );
+//  RingBuffer_Insert(&adcBuffer, (convPort << 4) | ADCH );
+//}
 
 void serialRXEnable() {
   UCSR1B |= (1 << RXEN1);
