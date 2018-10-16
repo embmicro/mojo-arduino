@@ -1,5 +1,5 @@
 ### modifications 
-- added eeprom upload functionality so fpga can read 1024 non-volatile user programmable bytes upon startup.
+- added eeprom upload functionality so fpga can read 1024 non-volatile user programmable bytes upon startup. Jupyter notebook to upload 1024 bytes [here](https://github.com/ruffner/lupa300/tree/master/tools/mojo_trigger).
 
 ### original
 This is the base code using by the Mojo V3 to load the FPGA and act as a USB to serial port/ADC for the FPGA. 
