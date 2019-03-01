@@ -358,15 +358,29 @@ void lineStateEvent(unsigned char linestate)
  *  from the AVR to the FPGA over SPI. 
  */
 void loadLUTFromEEPROM() {
-  delay(500);
+  byte a;
+  delay(8000);   //standalone project, 700
+  
   for( int addr=0; addr<1024; addr++ ){
-    delayMicroseconds(500);
+    delayMicroseconds(700);
     SET(SS, LOW);
-    byte a = EEPROM.read(addr);
+    a = EEPROM.read(addr);    
     SPI.transfer(a);
     SET(SS, HIGH);
-    delayMicroseconds(500);
+    delayMicroseconds(700);
   }
+
+  delayMicroseconds(600);
+  SET(SS, LOW);
+  a = 0x33;
+  SPI.transfer(a);
+  SET(SS, HIGH);
+  delayMicroseconds(600);
+  SET(SS, LOW);
+  a = 0x44;
+  SPI.transfer(a);
+  SET(SS, HIGH);
+  delayMicroseconds(600);
 
 }
 
